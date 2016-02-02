@@ -1,0 +1,160 @@
+
+<!DOCTYPE html>
+<!--[if IE 7]>
+<html class="ie ie7" lang="en-US">
+<![endif]-->
+<!--[if IE 8]>
+<html class="ie ie8" lang="en-US">
+<![endif]-->
+<!--[if !(IE 7) | !(IE 8)  ]><!-->
+<html lang="en-US">
+<!--<![endif]-->
+<head>
+  <meta charset="UTF-8" /> 
+  <meta name="viewport" content="width=device-width" />  
+  <!--[if lt IE 9]>
+	<script src="js/html5.js"></script>
+	<![endif]-->
+<title>swing &#8211; SWING</title>
+<style type='text/css'>		#wrapper-header .site-title { text-align: left; } #wrapper-header .header-logo { margin-left: 0; } .rtl #wrapper-header .site-title { text-align: right; } @media screen and (max-width: 990px) { html #wrapper #wrapper-header .header-content .site-title, html #wrapper #wrapper-header .header-content .header-logo { margin-bottom: 0 !important; } }		#wrapper #wrapper-header .title-box { width: 50%; }		#wrapper #wrapper-header .menu-box { width: 50%; }</style>
+		<script type="text/javascript">
+			window._wpemojiSettings = {"baseUrl":"http:\/\/s.w.org\/images\/core\/emoji\/72x72\/","ext":".png","source":{"concatemoji":"http:\/\/10.77.100.200:8080\/wordpress\/wp-includes\/js\/wp-emoji-release.min.js?ver=4.4.1"}};
+			!function(a,b,c){function d(a){var c,d=b.createElement("canvas"),e=d.getContext&&d.getContext("2d");return e&&e.fillText?(e.textBaseline="top",e.font="600 32px Arial","flag"===a?(e.fillText(String.fromCharCode(55356,56806,55356,56826),0,0),d.toDataURL().length>3e3):"diversity"===a?(e.fillText(String.fromCharCode(55356,57221),0,0),c=e.getImageData(16,16,1,1).data.toString(),e.fillText(String.fromCharCode(55356,57221,55356,57343),0,0),c!==e.getImageData(16,16,1,1).data.toString()):("simple"===a?e.fillText(String.fromCharCode(55357,56835),0,0):e.fillText(String.fromCharCode(55356,57135),0,0),0!==e.getImageData(16,16,1,1).data[0])):!1}function e(a){var c=b.createElement("script");c.src=a,c.type="text/javascript",b.getElementsByTagName("head")[0].appendChild(c)}var f,g;c.supports={simple:d("simple"),flag:d("flag"),unicode8:d("unicode8"),diversity:d("diversity")},c.DOMReady=!1,c.readyCallback=function(){c.DOMReady=!0},c.supports.simple&&c.supports.flag&&c.supports.unicode8&&c.supports.diversity||(g=function(){c.readyCallback()},b.addEventListener?(b.addEventListener("DOMContentLoaded",g,!1),a.addEventListener("load",g,!1)):(a.attachEvent("onload",g),b.attachEvent("onreadystatechange",function(){"complete"===b.readyState&&c.readyCallback()})),f=c.source||{},f.concatemoji?e(f.concatemoji):f.wpemoji&&f.twemoji&&(e(f.twemoji),e(f.wpemoji)))}(window,document,window._wpemojiSettings);
+		</script>
+		<style type="text/css">
+img.wp-smiley,
+img.emoji {
+	display: inline !important;
+	border: none !important;
+	box-shadow: none !important;
+	height: 1em !important;
+	width: 1em !important;
+	margin: 0 .07em !important;
+	vertical-align: -0.1em !important;
+	background: none !important;
+	padding: 0 !important;
+}
+</style>
+<link rel='stylesheet' id='naturespace-boxed-layout-css'  href='css/boxed-layout_4.4.1.css' type='text/css' media='all' />
+<link rel='stylesheet' id='naturespace-elegantfont-css'  href='css/elegantfont_4.4.1.css' type='text/css' media='all' />
+<link rel='stylesheet' id='naturespace-style-css'  href='css/style_4.4.1.css' type='text/css' media='all' />
+<link rel='stylesheet' id='naturespace-google-font-default-css'  href='//fonts.googleapis.com/css?family=Open+Sans&#038;subset=latin%2Clatin-ext%2Ccyrillic&#038;ver=4.4.1' type='text/css' media='all' />
+<script type='text/javascript' src='js/jquery.1.11.3.js'></script>
+<script type='text/javascript' src='js/jquery-migrate.min.1.2.1.js'></script>
+<link rel='https://api.w.org/' href='wp-json.json' />
+
+<meta name="generator" content="WordPress 4.4.1" />
+
+
+</head>
+ 
+<body class="single single-post postid-4 single-format-standard logged-in" id="wrapper">
+<div id="container-boxed"> 
+<div id="container-boxed-inner">
+<header id="wrapper-header">
+  
+
+
+</header> <!-- end of wrapper-header --><div id="wrapper-content">
+  <div class="container">
+  <div id="main-content">
+    <article id="content">
+      <div class="content-headline">
+        <h1 class="entry-headline">swing: Fast Inter-Process Data Sharing for In-Memory Computing</h1>
+		      </div>
+
+      <div class="entry-content">
+
+<p>SWING is a novel inter-process data sharing mechanism. To share data using SWING, one only needs to establish a mapping from the physical memory of the sender to the virtual memory space of the receiver, rather than transmitting data physically. Processes never need to deal with data synchronization, which is handled by a copy-on-write facility of the operating system.</p>
+<h3>The Data Sharing Model of SWING</h3>
+<p>&nbsp;</p>
+<p><img class="alignnone size-full wp-image-34" src="pic/COWModel.png" alt="COWModel" width="5801" height="3301" srcset="pic/COWModel-300x171.png 300w, pic/COWModel-768x437.png 768w, pic/COWModel-1024x583.png 1024w, pic/COWModel-1170x666.png 1170w, pic/COWModel.png 5801w" sizes="(max-width: 5801px) 100vw, 5801px" /></p>
+<p>The data sharing model of SWING is illustrated in the figure above. Processes A and B are two applications. They both transmit copies of their data to Process C, which performs data integration and data cleansing. After the work, Process C transmits its copies of data, with its modification, to the Processes D and E, which are responsible for conducting data analysis. It is just like transmitting physical copies of data. After the data sharing, all processes can work on their own copies of data independently.</p>
+<p>The same effect can be achieved by FIFO (a.k.a. named pipe) and socket. However, FIFO and socket are too slow, as they have to move data physically. By contrast, the SWING method does not replicate or move data physically. It just maps the physical memory space containing the data to the virtual memory space of the target processes. The actual replication is delayed to the time when a process attempts to modify a block of the data &#8212; upon modification, a copy-on-write operation is invoked and a new version of the data block is created. In typical data processing scenarios, write operations are much less frequent than read operations. Therefore, the overhead of data replication can be minimized through SWING.</p>
+<p>You may ask how is SWING different from shared memory, since shared memory does not copy data physically either. An advantage offered by SWING is that it alleviates your work in dealing with data synchronization.  Normally, an operating system offers two modes to access shared memory. In <em>shared</em> mode, a process&#8217; writes to the shared memory are completely visible to others. In <em>private</em> mode, a process&#8217; writes to the shared memory are only visible to itself &#8212; once it attempts to write to the shared memory, copy-on-write operations will be invoked to hide the write from other processes. To transmit data using shared memory, the sending process has to choose the shared mode, while the receiving process can choose the private mode. In this setting, the sender&#8217;s writes on the shared memory are constantly visible to the receiver. If the receiver wants a consistent snapshot of the data, concurrency control is required, to prevent the sender from further updating the snapshot. If we use SWING, after the transmission of data, the sender&#8217; updates are no longer visible to the receiver. Thus, synchronization is not required.</p>
+<p>SWING is extremely fast. It allows you to transmit data in milliseconds, no matter how big the data is. It allows the processes involved in data transmission to be loosely coupled, as they do not need to deal with data synchronization or concurrency control.</p>
+<h3>The APIs</h3>
+<p>You can interact with the SWING mechanism through five system calls.</p>
+<h4></h4>
+<h4>int createarea(void <em>**address</em>, int <em>*token</em>, unsigned long <em>length</em> )</h4>
+<p>A process uses this function to apply for a COW memory area.  Data located in the COW memory area can be shared to other processes. The input parameter <em>length</em> indicates the size of the COW memory. The returned <em>token</em> is a unique identifier in the whole system to identify the COW memory area. It works as a file descriptor of shared memory. The returned <i>address</i> is the start address of the COW memory area. As the size of a memory page is normally 4KB, the address of a COW memory area is aligned with 4KB. The function should return 0 if success.</p>
+<h4>int hook(void <em>**address</em>, int <em>*out_token</em>, int <em>token</em>)</h4>
+<p>A process uses this function to transmit data. Basically, it obtains a new COW memory area B and maps it to the physical memory space of an existing COW memory area A. After the hook operation, Area B will contain exactly the same data as Area A. The input parameter <em>token</em> represents Area A. Similar to <em>createarea()</em>, the returned values of <em>hook()</em>  contains a token and an address. The returned <em>out_token</em> represents Area B, and the returned <em>address</em> is the start address of Area B. The function should return 0 if success.</p>
+<h4><strong>int enablehook</strong>(int <em>token</em>)</h4>
+<p>A process uses this function to inform the operating system kernel that a COW memory area is ready to be mounted (by calling <em>hook()</em>). This system call is used to ensure data consistency. Before a process finishes modifying the data in its COW memory area, it may not wish other processes to hook the area and see a dirty version of the data. If a COW memory cannot be mounted, <em>hook()</em> returns -1. The function should return 0 if success.</p>
+<h4><strong>int disablehook</strong>(int <em>token</em>)</h4>
+<p>A process uses this function to inform the operating system kernel that a COW memory area cannot be hooked. It reverses the effect of <em>enablehook(</em>). When a COW memory area is just created, it is automatically disabled. The function should return 0 if success.</p>
+<h4><strong>int release</strong>(int <em>token</em>)</h4>
+<p>A process uses this system call to release a COW memory area created by <em>createarea()</em> or <em>hook()</em>. After the call, the input <em>token</em> is released and available to represent a new COW memory area. When a process terminates, its COW memory areas will be automatically released. The function should return 0 if success.</p>
+<h3>How to use it</h3>
+<p>As we implemented the function in the Linux kernel, you need to compile our kernel and install it. Because we have not tested it on other systems, we recommend that you use CentOS 7.</p>
+<h4>Step 1: get the code</h4>
+<p>You can get our kernel in the following three ways:</p>
+<p>1. Download from <a href="https://github.com/swinglinux/swing/tarball/swing">here</a> and extract it.</p>
+<p>2. Clone this repository and checkout the &#8216;swing&#8217; branch with commands:</p>
+<p style="padding-left: 30px;"><strong>git clone https://github.com/swinglinux/swing.git</strong></p>
+<p style="padding-left: 30px;"><strong>git checkout swing</strong></p>
+<p>3. If you have the <a href="https://git.kernel.org/cgit/linux/kernel/git/stable/linux-stable.git/">linux-stable git repo </a>in your computer. Just checkout v3.10.69, and then use <a href="https://gist.github.com/swinglinux/9115d2485841e2274efa">this patch</a> with the command:</p>
+<p style="padding-left: 30px;"><strong>git apply swing_patch_to_linux-stable_v3.10.69.patch</strong></p>
+<h4>Step 2: compile it</h4>
+<p>You can compile and install it in the same way as compiling the original kernel.</p>
+<p>Put the <a href="https://gist.github.com/swinglinux/6cd5490b0b903fb7e973">.config </a>in the source code directory.</p>
+<p style="padding-left: 30px;"><del>Optional: If you are familiar with the process, you can get this file from your system. If you are not, just ignore this line. </del></p>
+<p>Then you should configure the code with ( just execute this command and then exit ):</p>
+<p style="padding-left: 30px;"><strong>make menuconfig </strong></p>
+<p>Use the following three commands to compile and install the new kernel.</p>
+<p style="padding-left: 30px;"><strong>make </strong></p>
+<p style="padding-left: 30px;"><strong>sudo make modules_install</strong></p>
+<p style="padding-left: 30px;"><strong>sudo make install </strong></p>
+<p>Then, you should restart your system and use the new kernel to boot your system.</p>
+<h3>Demos</h3>
+<p>In this section, we present a demo to illustrate how to write programs using the new feature. You can download all the codes of this demo from <a href="https://github.com/swinglinux/swingdemo" target="_blank">here</a></p>
+<p>The header file ‘swing.h’ declares all the function and swing.c implements them.</p>
+<p>You should compile the producer and the consumer first.</p>
+<p style="padding-left: 30px;"><strong>gcc producer.c swing.c –o producer</strong></p>
+<p style="padding-left: 30px;"><strong>gcc consumer.c swing.c –o consumer</strong></p>
+<p>The following pictures show the detailed process of running the demo.</p>
+<ol>
+<li>Execute the producer to create a COW area (8KB, that is 2 pages), write &#8216;1&#8217; to the first byte of each page and enable  this area to be hooked. The command<strong> r</strong> indicates read, <strong>w 1 </strong>indicates write, <strong>e</strong> indicates enablehook, <strong>d</strong> indicates disablehook , <strong>u</strong> indicates delete the COW area and<strong> q</strong> indicates exit the program.</li>
+</ol>
+<p><img class="alignnone size-full wp-image-41" src="pic/n1.png" alt="n1" width="737" height="503" srcset="pic/n1-300x205.png 300w, pic/n1.png 737w" sizes="(max-width: 737px) 100vw, 737px" /> <img class="alignnone size-full wp-image-42" src="pic/n2.png" alt="n2" width="737" height="503" srcset="pic/n2-300x205.png 300w, pic/n2.png 737w" sizes="(max-width: 737px) 100vw, 737px" /> <img class="alignnone size-full wp-image-43" src="pic/n3.png" alt="n3" width="737" height="503" srcset="pic/n3-300x205.png 300w, pic/n3.png 737w" sizes="(max-width: 737px) 100vw, 737px" /> <img class="alignnone size-full wp-image-44" src="pic/n4.png" alt="n4" width="737" height="503" srcset="pic/n4-300x205.png 300w, pic/n4.png 737w" sizes="(max-width: 737px) 100vw, 737px" /></p>
+<p>2. Execute the consumer , and hook the COW area that the producer created.</p>
+<p><img class="alignnone size-full wp-image-45" src="pic/n5.png" alt="n5" width="737" height="503" srcset="pic/n5-300x205.png 300w, pic/n5.png 737w" sizes="(max-width: 737px) 100vw, 737px" /> <img class="alignnone size-full wp-image-46" src="pic/n6.png" alt="n6" width="737" height="503" srcset="pic/n6-300x205.png 300w, pic/n6.png 737w" sizes="(max-width: 737px) 100vw, 737px" /></p>
+<p>3. The producer write 2 to its COW area, and it is not visible to the consumer.</p>
+<p><img class="alignnone size-full wp-image-47" src="pic/n7.png" alt="n7" width="737" height="503" srcset="pic/n7-300x205.png 300w, pic/n7.png 737w" sizes="(max-width: 737px) 100vw, 737px" /></p>
+<p>4. The consumer can still read the same contents.</p>
+<p><img class="alignnone size-full wp-image-48" src="pic/n8.png" alt="n8" width="737" height="503" srcset="pic/n8-300x205.png 300w, pic/n8.png 737w" sizes="(max-width: 737px) 100vw, 737px" /></p>
+<p>5. The consumer can write to its COW area, and it is not visible to the producer, either.</p>
+<p><img class="alignnone size-full wp-image-49" src="pic/n9.png" alt="n9" width="737" height="503" srcset="pic/n9-300x205.png 300w, pic/n9.png 737w" sizes="(max-width: 737px) 100vw, 737px" /></p>
+<p>6. Exit the programs.</p>
+<p>&nbsp;</p>
+<p><img class="alignnone size-full wp-image-50" src="pic/n10.png" alt="n10" width="737" height="503" srcset="pic/n10-300x205.png 300w, pic/n10.png 737w" sizes="(max-width: 737px) 100vw, 737px" /> <img class="alignnone size-full wp-image-51" src="pic/n11.png" alt="n11" width="737" height="503" srcset="pic/n11-300x205.png 300w, pic/n11.png 737w" sizes="(max-width: 737px) 100vw, 737px" /></p>
+<h3> Enjoy it !</h3>
+   </div>
+<div id="naturespace-post-nav" class="navigation" role="navigation">
+	<div class="nav-wrapper">
+   </div>
+</div>
+ 
+<div id="comments" class="comments-area comments-area-post">
+
+	
+	
+</div><!-- #comments .comments-area -->    </article> <!-- end of content -->
+  </div>
+<aside id="sidebar">
+</aside> <!-- end of sidebar -->  </div>
+</div>     <!-- end of wrapper-content -->
+<footer id="wrapper-footer">
+  
+</footer>  <!-- end of wrapper-footer -->
+</div>
+</div>
+<script type='text/javascript' src='js/placeholders2.1.0.js'></script>
+<script type='text/javascript' src='js/scroll-to-top1.0.js'></script>
+<script type='text/javascript' src='js/selectnav.0.1.js'></script>
+<script type='text/javascript' src='js/responsive.1.0.js'></script>
+<script type='text/javascript' src='js/wp-embed.min4.4.1.js'></script>
+      
+</body>
+</html>
