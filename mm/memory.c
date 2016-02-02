@@ -1089,6 +1089,26 @@ int copy_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	return ret;
 }
 
+int share_pagetable_cow(struct mm_struct *dst_mm, struct mm_struct *src_mm,
+		struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma, int not_same_process)
+{
+	pgd_t *src_pgd, *dst_pgd;
+	pgd_t pgd_v;
+	unsigned long src_addr = src_vma->vm_start;
+	unsigned long dst_addr = dst_vma->vm_start;
+	int c;
+
+	dst_pgd = pgd_offset(dst_mm, dst_addr);
+	src_pgd = pgd_offset(src_mm, src_addr);
+	pgd_v.pgd=(pgdval_t)((unsigned long)(~_PAGE_RW) & (unsigned long)(*src_pgd).pgd);
+	set_pgd(src_pgd, pgd_v );
+	set_pgd(dst_pgd, pgd_v );
+	atomic_inc(&pgd_page(*dst_pgd)->_mapcount);
+	flush_tlb_mm(dst_mm);
+	flush_tlb_mm(src_mm);
+	return 0;
+}
+
 static unsigned long zap_pte_range(struct mmu_gather *tlb,
 				struct vm_area_struct *vma, pmd_t *pmd,
 				unsigned long addr, unsigned long end,
@@ -1192,7 +1212,8 @@ again:
 		pte_clear_not_present_full(mm, addr, pte, tlb->fullmm);
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 
-	add_mm_rss_vec(mm, rss);
+	if ((vma->vm_flags&VM_COW)==0)
+		add_mm_rss_vec(mm, rss);
 	arch_leave_lazy_mmu_mode();
 	pte_unmap_unlock(start_pte, ptl);
 
@@ -1225,7 +1246,142 @@ again:
 
 	return addr;
 }
+static unsigned long zap_pte_range_cow(struct mmu_gather *tlb,
+				struct vm_area_struct *vma, pmd_t *pmd,
+				unsigned long addr, unsigned long end,
+				struct zap_details *details)
+{
+	struct mm_struct *mm = tlb->mm;
+	int force_flush = 0;
+	int rss[NR_MM_COUNTERS];
+	pte_t *start_pte;
+	pte_t *pte;
 
+again:
+	init_rss_vec(rss);
+	start_pte = pte_offset_map(pmd, addr);
+	pte = start_pte;
+	arch_enter_lazy_mmu_mode();
+	do {
+		pte_t ptent = *pte;
+		if (pte_none(ptent)) {
+			continue;
+		}
+
+		if (pte_present(ptent)) {
+			struct page *page;
+
+			page = vm_normal_page(vma, addr, ptent);
+			if (unlikely(details) && page) {
+				/*
+				 * unmap_shared_mapping_pages() wants to
+				 * invalidate cache without truncating:
+				 * unmap shared but keep private pages.
+				 */
+				if (details->check_mapping &&
+				    details->check_mapping != page->mapping)
+					continue;
+				/*
+				 * Each page->index must be checked when
+				 * invalidating or truncating nonlinear.
+				 */
+				if (details->nonlinear_vma &&
+				    (page->index < details->first_index ||
+				     page->index > details->last_index))
+					continue;
+			}
+			ptent = ptep_get_and_clear_full(mm, addr, pte,
+							tlb->fullmm);
+			tlb_remove_tlb_entry(tlb, pte, addr);
+			if (unlikely(!page))
+				continue;
+			if (unlikely(details) && details->nonlinear_vma
+			    && linear_page_index(details->nonlinear_vma,
+						addr) != page->index)
+				set_pte_at(mm, addr, pte,
+					   pgoff_to_pte(page->index));
+			if (PageAnon(page))
+				rss[MM_ANONPAGES]--;
+			else {
+				if (pte_dirty(ptent))
+					set_page_dirty(page);
+				if (pte_young(ptent) &&
+				    likely(!VM_SequentialReadHint(vma)))
+					mark_page_accessed(page);
+				rss[MM_FILEPAGES]--;
+			}
+			page_remove_rmap(page);
+			if (unlikely(page_mapcount(page) < 0))
+				print_bad_pte(vma, addr, ptent, page);
+			force_flush = !__tlb_remove_page(tlb, page);
+			if (force_flush)
+				break;
+			continue;
+		}
+		/*
+		 * If details->check_mapping, we leave swap entries;
+		 * if details->nonlinear_vma, we leave file entries.
+		 */
+		if (unlikely(details))
+			continue;
+		if (pte_file(ptent)) {
+			if (unlikely(!(vma->vm_flags & VM_NONLINEAR)))
+				print_bad_pte(vma, addr, ptent, NULL);
+		} else {
+			swp_entry_t entry = pte_to_swp_entry(ptent);
+
+			if (!non_swap_entry(entry))
+				rss[MM_SWAPENTS]--;
+			else if (is_migration_entry(entry)) {
+				struct page *page;
+
+				page = migration_entry_to_page(entry);
+
+				if (PageAnon(page))
+					rss[MM_ANONPAGES]--;
+				else
+					rss[MM_FILEPAGES]--;
+			}
+			if (unlikely(!free_swap_and_cache(entry)))
+				print_bad_pte(vma, addr, ptent, NULL);
+		}
+		pte_clear_not_present_full(mm, addr, pte, tlb->fullmm);
+	} while (pte++, addr += PAGE_SIZE, addr != end);
+
+	if ((vma->vm_flags&VM_COW)==0)
+		add_mm_rss_vec(mm, rss);
+	arch_leave_lazy_mmu_mode();
+
+
+	/*
+	 * mmu_gather ran out of room to batch pages, we break out of
+	 * the PTE lock to avoid doing the potential expensive TLB invalidate
+	 * and page-free while holding it.
+	 */
+	if (force_flush) {
+		unsigned long old_end;
+
+		force_flush = 0;
+
+		/*
+		 * Flush the TLB just for the previous segment,
+		 * then update the range to be the remaining
+		 * TLB range.
+		 */
+		old_end = tlb->end;
+		tlb->end = addr;
+
+		tlb_flush_mmu(tlb);
+
+		tlb->start = addr;
+		tlb->end = old_end;
+
+		if (addr != end)
+			goto again;
+	}
+
+	return addr;
+}
 static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 				struct vm_area_struct *vma, pud_t *pud,
 				unsigned long addr, unsigned long end,
@@ -1233,6 +1389,8 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 {
 	pmd_t *pmd;
 	unsigned long next;
+	int c;
+	struct page* page;
 
 	pmd = pmd_offset(pud, addr);
 	do {
@@ -1262,7 +1420,29 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 		 */
 		if (pmd_none_or_trans_huge_or_clear_bad(pmd))
 			goto next;
-		next = zap_pte_range(tlb, vma, pmd, addr, next, details);
+		if(likely((vma->vm_flags&VM_COW)==0))
+		{
+			next = zap_pte_range(tlb, vma, pmd, addr, next, details);
+		}
+		else
+		{
+			page = pmd_page(*pmd);
+			spin_lock(&page->ptl);
+			c = atomic_read(&page->_mapcount);
+			if(c==-1)
+			{
+				atomic_set(&page->_mapcount,-1);
+				next = zap_pte_range_cow(tlb, vma, pmd, addr, next, details);
+			}
+			else if(c>-1)
+			{
+				atomic_dec(&page->_mapcount);
+				pmd_clear(pmd);
+			}
+			else
+				printk("MENG:BUG in zap_pmd_range\n");
+			spin_unlock(&page->ptl);
+		}
 next:
 		cond_resched();
 	} while (pmd++, addr = next, addr != end);
@@ -1277,13 +1457,34 @@ static inline unsigned long zap_pud_range(struct mmu_gather *tlb,
 {
 	pud_t *pud;
 	unsigned long next;
+	int c;
+	struct page* page;
 
 	pud = pud_offset(pgd, addr);
 	do {
 		next = pud_addr_end(addr, end);
 		if (pud_none_or_clear_bad(pud))
 			continue;
-		next = zap_pmd_range(tlb, vma, pud, addr, next, details);
+		if(likely((vma->vm_flags&VM_COW)==0))
+			next = zap_pmd_range(tlb, vma, pud, addr, next, details);
+		else
+		{
+			page = pud_page(*pud);
+			spin_lock(&page->ptl);
+			c = atomic_read(&page->_mapcount);
+			if(c==-1)
+			{
+				next = zap_pmd_range(tlb, vma, pud, addr, next, details);
+			}
+			else if(c>-1)
+			{
+				atomic_dec(&page->_mapcount);
+				pud_clear(pud);
+			}
+			else
+				printk("MENG:BUG in zap_pud_range\n");
+			spin_unlock(&page->ptl);
+		}
 	} while (pud++, addr = next, addr != end);
 
 	return addr;
@@ -1296,6 +1497,8 @@ static void unmap_page_range(struct mmu_gather *tlb,
 {
 	pgd_t *pgd;
 	unsigned long next;
+	int c;
+	struct page* page;
 
 	if (details && !details->check_mapping && !details->nonlinear_vma)
 		details = NULL;
@@ -1308,7 +1511,26 @@ static void unmap_page_range(struct mmu_gather *tlb,
 		next = pgd_addr_end(addr, end);
 		if (pgd_none_or_clear_bad(pgd))
 			continue;
-		next = zap_pud_range(tlb, vma, pgd, addr, next, details);
+		if (likely((vma->vm_flags & VM_COW) == 0))
+			next = zap_pud_range(tlb, vma, pgd, addr, next, details);
+		else
+		{
+			page = pgd_page(*pgd);
+			spin_lock(&page->ptl);
+			c = atomic_read(&page->_mapcount);
+			if (c==-1)
+			{
+				next = zap_pud_range(tlb, vma, pgd, addr, next, details);
+			}
+			else if(c>-1)
+			{
+				atomic_dec(&page->_mapcount);
+				pgd_clear(pgd);
+			}
+			else
+				printk("MENG:BUG in unmap_page_range\n");
+			spin_unlock(&page->ptl);
+		}
 	} while (pgd++, addr = next, addr != end);
 	tlb_end_vma(tlb, vma);
 	mem_cgroup_uncharge_end();
@@ -3267,7 +3489,8 @@ static int do_anonymous_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	if (!pte_none(*page_table))
 		goto release;
 
-	inc_mm_counter_fast(mm, MM_ANONPAGES);
+	if((vma->vm_flags&VM_COW)==0)
+		inc_mm_counter_fast(mm, MM_ANONPAGES);
 	page_add_new_anon_rmap(page, vma, address);
 setpte:
 	set_pte_at(mm, address, page_table, entry);
@@ -3751,6 +3974,143 @@ unlock:
 	return 0;
 }
 
+int handle_pgd_cow(struct mm_struct *mm, pgd_t* pgd,unsigned long address)
+{
+	pgd_t oldpgd_val = *pgd;
+	pud_t* pud;
+	pud_t* src_pud;
+	int i;
+	int share_count ;
+	struct page*page;
+	page = pgd_page(oldpgd_val);
+	spin_lock(&page->ptl);
+
+	share_count = atomic_read(&page->_mapcount);
+	if(share_count > -1)
+	{
+		pgd->pgd=0;
+		pud = pud_alloc(mm, pgd, address);
+		memcpy((void*)pgd_page_vaddr(*pgd),(void*)pgd_page_vaddr(oldpgd_val),4096);
+		pud=(pud_t*)pgd_page_vaddr(*pgd);
+		src_pud=(pud_t*)pgd_page_vaddr(oldpgd_val);
+		for(i=0;i<512;i++)
+		{
+			if(pud_none(pud[i]))
+				continue;
+			if(!pud_none(src_pud[i]))
+				src_pud[i].pud=src_pud[i].pud&(~_PAGE_RW);
+			pud[i].pud=pud[i].pud&(~_PAGE_RW);
+			atomic_inc(&pud_page(pud[i])->_mapcount);
+		}
+		atomic_dec(&page->_mapcount);
+	}
+	else if(share_count == -1)
+	{
+		oldpgd_val.pgd=(pgdval_t)((unsigned long)(_PAGE_RW) | (unsigned long)(oldpgd_val.pgd));
+		set_pgd(pgd, oldpgd_val );
+	}
+	else
+		printk("MENG:BUG in handle_pgd_cow\n");
+
+	spin_unlock(&page->ptl);
+	return 0;
+}
+
+int handle_pud_cow(struct mm_struct *mm, pud_t* pud,unsigned long address)
+{
+	pud_t oldpudval = *pud;
+	pmd_t* pmd;
+	pmd_t* src_pmd;
+	int i;
+	struct page*page;
+	int share_count;
+	page = pud_page(oldpudval);
+	spin_lock(&page->ptl);
+	share_count = atomic_read(&page->_mapcount);
+
+	if(share_count > -1)
+	{
+		pud->pud=0;
+		pmd = pmd_alloc(mm, pud, address);
+		memcpy((void*)pud_page_vaddr(*pud),(void*)pud_page_vaddr(oldpudval),4096);
+		pmd=(pmd_t*)pud_page_vaddr(*pud);
+		src_pmd=(pmd_t*)pud_page_vaddr(oldpudval);
+		for(i=0;i<512;i++)
+		{
+			if(pmd_none(pmd[i]))
+				continue;
+			if(!pmd_none(src_pmd[i]))
+				src_pmd[i].pmd=src_pmd[i].pmd&(~_PAGE_RW);
+			pmd[i].pmd=pmd[i].pmd&(~_PAGE_RW);
+			atomic_inc(&pmd_page(pmd[i])->_mapcount);
+		}
+		atomic_dec(&page->_mapcount);
+	}
+	else if(share_count == -1)
+	{
+		oldpudval.pud = oldpudval.pud | _PAGE_RW;
+		set_pud(pud,oldpudval);
+	}
+	else
+		printk("MENG:BUG in handle_pud_cow\n");
+
+	spin_unlock(&page->ptl);
+	return 0;
+}
+
+int handle_pmd_cow(struct mm_struct *mm, pmd_t* pmd,unsigned long address)
+{
+	pmd_t  oldpmdval = *pmd;
+	pte_t* pte;
+	pte_t* src_pte;
+	int i;
+	struct page*page;
+	struct page*ptearrpage;
+	spinlock_t  * ptl;
+	int share_count ;
+
+	ptearrpage = pmd_page(oldpmdval);
+	spin_lock(&ptearrpage->ptl);
+	share_count = atomic_read(&ptearrpage->_mapcount);
+
+	if(share_count > -1 )
+	{
+		pmd->pmd=0;
+		pte=pte_alloc_map_lock(mm, pmd, address, &ptl);
+		memcpy((void*)pmd_page_vaddr(*pmd),(void*)pmd_page_vaddr(oldpmdval),4096);
+		pte=(pte_t*)pmd_page_vaddr(*pmd);
+		src_pte=(pte_t*)pmd_page_vaddr(oldpmdval);
+		for(i=0;i<512;i++)
+		{
+			if(!pte_none(pte[i]))
+			{
+				pte[i].pte=pte[i].pte&(~_PAGE_RW);
+				if(!pte_none(src_pte[i]))
+					src_pte[i].pte=src_pte[i].pte&(~_PAGE_RW);
+
+				page = pte_page(pte[i]);
+				if (page) {
+					get_page(page);
+					page_dup_rmap(page);
+				}
+			}
+		}
+		spin_unlock(ptl);
+
+		atomic_dec(&ptearrpage->_mapcount);
+	}
+	else if (share_count == -1)
+	{
+		oldpmdval.pmd = oldpmdval.pmd | _PAGE_RW;
+		set_pmd(pmd,oldpmdval);
+	}
+	else
+		printk("MENG:BUG in handle_pmd_cow\n");
+	spin_unlock(&ptearrpage->ptl);
+	return 0;
+}
+
+
 /*
  * By the time we get here, we already hold the mm semaphore
  */
@@ -3762,18 +4122,30 @@ static int __handle_mm_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	pmd_t *pmd;
 	pte_t *pte;
 
-	if (unlikely(is_vm_hugetlb_page(vma)))
+	if (unlikely(is_vm_hugetlb_page(vma)&& (!(vma->vm_flags & VM_COW))))
 		return hugetlb_fault(mm, vma, address, flags);
 
 retry:
 	pgd = pgd_offset(mm, address);
+	if((pgd_flags(*pgd) & (_PAGE_PRESENT )) && (!pgd_write(*pgd)) && (vma->vm_flags & VM_COW))
+		handle_pgd_cow(mm,pgd,address);
+
 	pud = pud_alloc(mm, pgd, address);
 	if (!pud)
 		return VM_FAULT_OOM;
+	if((pud_flags(*pud) & (_PAGE_PRESENT )) &&!pud_write(*pud) && (vma->vm_flags & VM_COW))
+		handle_pud_cow(mm,pud,address);
+
 	pmd = pmd_alloc(mm, pud, address);
 	if (!pmd)
 		return VM_FAULT_OOM;
-	if (pmd_none(*pmd) && transparent_hugepage_enabled(vma)) {
+
+	if( (pmd_flags(*pmd) & (_PAGE_PRESENT )) &&!pmd_write(*pmd) && (vma->vm_flags & VM_COW))
+		handle_pmd_cow(mm,pmd,address);
+
+
+
+	if (pmd_none(*pmd) && transparent_hugepage_enabled(vma) && (!(vma->vm_flags & VM_COW))) {
 		if (!vma->vm_ops)
 			return do_huge_pmd_anonymous_page(mm, vma, address,
 							  pmd, flags);
@@ -3784,6 +4156,8 @@ retry:
 		barrier();
 		if (pmd_trans_huge(orig_pmd)) {
 			unsigned int dirty = flags & FAULT_FLAG_WRITE;
+
+			BUG_ON(vma->vm_flags & VM_COW);
 
 			/*
 			 * If the pmd is splitting, return and retry the
@@ -3889,6 +4263,7 @@ int __pud_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
 	pud_t *new = pud_alloc_one(mm, address);
 	if (!new)
 		return -ENOMEM;
+	spin_lock_init(&(virt_to_page(new)->ptl));
 
 	smp_wmb(); /* See comment in __pte_alloc */
 
@@ -3912,6 +4287,7 @@ int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
 	pmd_t *new = pmd_alloc_one(mm, address);
 	if (!new)
 		return -ENOMEM;
+	spin_lock_init(&(virt_to_page(new)->ptl));
 
 	smp_wmb(); /* See comment in __pte_alloc */
 

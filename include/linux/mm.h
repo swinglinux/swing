@@ -25,6 +25,16 @@ struct file_ra_state;
 struct user_struct;
 struct writeback_control;
 
+struct cow_area_struct {
+	struct rw_semaphore cow_sem;
+	int isinuse;
+	int mountable;
+    struct vm_area_struct *vma;
+};
+#define COW_AREA_COUNT 100
+
+extern struct cow_area_struct cow_area[COW_AREA_COUNT];
+
 #ifndef CONFIG_DISCONTIGMEM          /* Don't use mapnrs, do it properly */
 extern unsigned long max_mapnr;
 #endif
@@ -110,6 +120,7 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_HUGEPAGE	0x20000000	/* MADV_HUGEPAGE marked this vma */
 #define VM_NOHUGEPAGE	0x40000000	/* MADV_NOHUGEPAGE marked this vma */
 #define VM_MERGEABLE	0x80000000	/* KSM may merge identical pages */
+#define VM_COW          0x100000000UL
 
 #if defined(CONFIG_X86)
 # define VM_PAT		VM_ARCH_1	/* PAT reserves whole VMA at once (x86) */

@@ -1,4 +1,13 @@
-        Linux kernel release 3.x <http://kernel.org/>
+Please visit the website of SWING for detailed introductions:
+http://swinglinux.github.io/swing/ 
+
+
+
+The following README is the one from the original kernel.
+
+
+
+Linux kernel release 3.x <http://kernel.org/>
 
 These are the release notes for Linux version 3.  Read them carefully,
 as they tell you what this is all about, explain how to install the
@@ -409,4 +418,3 @@ IF SOMETHING GOES WRONG:
 
    gdb'ing a non-running kernel currently fails because gdb (wrongly)
    disregards the starting offset for which the kernel is compiled.
-

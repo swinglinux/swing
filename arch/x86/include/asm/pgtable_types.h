@@ -89,6 +89,9 @@
 #define _KERNPG_TABLE	(_PAGE_PRESENT | _PAGE_RW | _PAGE_ACCESSED |	\
 			 _PAGE_DIRTY)
 
+#define _PAGE_TABLE_NOWRITE (_PAGE_TABLE & ~_PAGE_RW)
+#define _KERNPG_TABLE_NOWRITE (_KERNPG_TABLE & ~_PAGE_RW)
+
 /* Set of bits not changed in pte_modify */
 #define _PAGE_CHG_MASK	(PTE_PFN_MASK | _PAGE_PCD | _PAGE_PWT |		\
 			 _PAGE_SPECIAL | _PAGE_ACCESSED | _PAGE_DIRTY)

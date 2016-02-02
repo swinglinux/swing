@@ -285,7 +285,7 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 	if (stack_guard_page_end(vma, end))
 		end -= PAGE_SIZE;
 
-	seq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu %n",
+	seq_printf(m, "%012lx-%012lx %c%c%c%c %08llx %02x:%02x %12lu %12lx %12lx %n",
 			start,
 			end,
 			flags & VM_READ ? 'r' : '-',
@@ -293,7 +293,8 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 			flags & VM_EXEC ? 'x' : '-',
 			flags & VM_MAYSHARE ? 's' : 'p',
 			pgoff,
-			MAJOR(dev), MINOR(dev), ino, &len);
+			MAJOR(dev), MINOR(dev), ino, flags,
+			vma->vm_pgoff, &len);
 
 	/*
 	 * Print the dentry name for named mappings, and a
@@ -311,6 +312,11 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 
 		if (!mm) {
 			name = "[vdso]";
+			goto done;
+		}
+
+		if (vma->vm_flags & VM_COW) {
+			name = "[cow]";
 			goto done;
 		}
 
@@ -564,6 +570,7 @@ static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 		[ilog2(VM_HUGEPAGE)]	= "hg",
 		[ilog2(VM_NOHUGEPAGE)]	= "nh",
 		[ilog2(VM_MERGEABLE)]	= "mg",
+		[ilog2(VM_COW)]	= "cw",
 	};
 	size_t i;
 

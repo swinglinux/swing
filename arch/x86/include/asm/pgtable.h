@@ -107,6 +107,15 @@ static inline int pte_write(pte_t pte)
 	return pte_flags(pte) & _PAGE_RW;
 }
 
+static inline int pgd_write(pgd_t pgd)
+{
+	return pgd_flags(pgd) & _PAGE_RW;
+}
+static inline int pud_write(pud_t pud)
+{
+	return pud_flags(pud) & _PAGE_RW;
+}
+
 static inline int pte_file(pte_t pte)
 {
 	return pte_flags(pte) & _PAGE_FILE;
@@ -505,7 +514,7 @@ static inline int pmd_bad(pmd_t pmd)
 	if ((pmd_flags(pmd) & (_PAGE_NUMA|_PAGE_PRESENT)) == _PAGE_NUMA)
 		return 0;
 #endif
-	return (pmd_flags(pmd) & ~_PAGE_USER) != _KERNPG_TABLE;
+	return (pmd_flags(pmd) & ~(_PAGE_USER | _PAGE_RW)) != _KERNPG_TABLE_NOWRITE;
 }
 
 static inline unsigned long pages_to_mb(unsigned long npg)
@@ -591,7 +600,7 @@ static inline pud_t *pud_offset(pgd_t *pgd, unsigned long address)
 
 static inline int pgd_bad(pgd_t pgd)
 {
-	return (pgd_flags(pgd) & ~_PAGE_USER) != _KERNPG_TABLE;
+	return (pgd_flags(pgd) & (~(_PAGE_USER | _PAGE_RW ))) != _KERNPG_TABLE_NOWRITE;
 }
 
 static inline int pgd_none(pgd_t pgd)

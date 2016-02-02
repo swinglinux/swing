@@ -84,6 +84,54 @@ pgprot_t vm_get_page_prot(unsigned long vm_flags)
 }
 EXPORT_SYMBOL(vm_get_page_prot);
 
+struct cow_area_struct cow_area[COW_AREA_COUNT];
+struct rw_semaphore mount_cow_sem;
+void __init init_cow_area(void)
+{
+	int i;
+	for (i=0;i<COW_AREA_COUNT;i++)
+	{
+		init_rwsem(&(cow_area[i].cow_sem));
+		cow_area[i].isinuse=0;
+	}
+	init_rwsem(&mount_cow_sem);
+	printk("MENG:INFO Inited cow_area.\n");
+}
+
+int get_cow_area_struct(void)
+{
+	int i;
+	for (i=0;i<COW_AREA_COUNT;i++)
+	{
+		if (cow_area[i].isinuse)
+			continue;
+		down_write(&(cow_area[i].cow_sem));
+		if (cow_area[i].isinuse == 0)
+		{
+			cow_area[i].isinuse = 1;
+			cow_area[i].mountable = 0;
+			cow_area[i].vma = NULL;
+			up_write(&(cow_area[i].cow_sem));
+			return i;
+		}
+		else
+			up_write(&(cow_area[i].cow_sem));
+	}
+	return -1;
+}
+/*
+ *  DO NOT pass the wrong number!
+ */
+void release_cow_area_struct(int number)
+{
+	down_write(&(cow_area[number].cow_sem));
+	cow_area[number].isinuse = 0;
+	cow_area[number].vma = 0;
+	cow_area[number].mountable = 0;
+	up_write(&(cow_area[number].cow_sem));
+}
+
+
 int sysctl_overcommit_memory __read_mostly = OVERCOMMIT_GUESS;  /* heuristic overcommit */
 int sysctl_overcommit_ratio __read_mostly = 50;	/* default is 50% */
 int sysctl_max_map_count __read_mostly = DEFAULT_MAX_MAP_COUNT;
@@ -1134,6 +1182,9 @@ struct anon_vma *find_mergeable_anon_vma(struct vm_area_struct *vma)
 	struct anon_vma *anon_vma;
 	struct vm_area_struct *near;
 
+	if (vma->vm_flags & VM_COW)
+		return NULL;
+
 	near = vma->vm_next;
 	if (!near)
 		goto try_prev;
@@ -1632,6 +1683,8 @@ unacct_error:
 		vm_unacct_memory(charged);
 	return error;
 }
+
+
 
 unsigned long unmapped_area(struct vm_unmapped_area_info *info)
 {
@@ -2494,7 +2547,7 @@ int split_vma(struct mm_struct *mm, struct vm_area_struct *vma,
 int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
 {
 	unsigned long end;
-	struct vm_area_struct *vma, *prev, *last;
+	struct vm_area_struct *vma, *prev, *last, *vma_for_cow;
 
 	if ((start & ~PAGE_MASK) || start > TASK_SIZE || len > TASK_SIZE-start)
 		return -EINVAL;
@@ -2514,6 +2567,16 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
 	if (vma->vm_start >= end)
 		return 0;
 
+	vma_for_cow = vma;
+	while(vma_for_cow && (vma_for_cow->vm_start < end))
+	{
+		if((vma_for_cow->vm_flags & VM_COW)&&(vma_for_cow->cow_number != -1))
+		{
+			release_cow_area_struct(vma_for_cow->cow_number);
+			vma_for_cow->cow_number = -1;
+		}
+		vma_for_cow = vma_for_cow->vm_next;
+	}
 	/*
 	 * If we need to split any vma, do it now to save pain later.
 	 *
@@ -2721,6 +2784,16 @@ void exit_mmap(struct mm_struct *mm)
 	/* mm's last user has gone, and its about to be pulled down */
 	mmu_notifier_release(mm);
 
+	vma = mm->mmap;
+	while (vma) {
+		if ((vma->vm_flags & VM_COW) && (vma->cow_number != -1))
+		{
+			release_cow_area_struct(vma->cow_number);
+			vma->cow_number=-1;
+		}
+		vma = vma->vm_next;
+	}
+
 	if (mm->locked_vm) {
 		vma = mm->mmap;
 		while (vma) {
@@ -2756,8 +2829,6 @@ void exit_mmap(struct mm_struct *mm)
 		vma = remove_vma(vma);
 	}
 	vm_unacct_memory(nr_accounted);
-
-	WARN_ON(mm->nr_ptes > (FIRST_USER_ADDRESS+PMD_SIZE-1)>>PMD_SHIFT);
 }
 
 /* Insert vm structure into process list sorted by address
@@ -3267,3 +3338,271 @@ static int __meminit init_reserve_notifier(void)
 	return 0;
 }
 module_init(init_reserve_notifier)
+
+int share_pagetable_cow(struct mm_struct *dst_mm, struct mm_struct *src_mm,
+		struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma, int not_same_process);
+
+#define MAP_COW_ADDR_MASK ~((1UL<<39)-1)
+SYSCALL_DEFINE4(createarea_common, int, number, unsigned long, len, int, mountnumber, int, not_same_process)
+{
+	unsigned long addr;
+	unsigned long flags;
+	unsigned long pgoff;
+	vm_flags_t vm_flags;
+	struct mm_struct *mm;
+	struct vm_area_struct *vma, *prev;
+	int error;
+	struct rb_node **rb_link, *rb_parent;
+	unsigned long charged = 0;
+	int ret=0;
+
+	mm = current->mm;
+
+	len = PAGE_ALIGN(len);
+	if (!len)
+		return -ENOMEM;
+
+	if (mm->map_count > sysctl_max_map_count)
+		return -ENOMEM;
+
+	flags = -1;
+
+	addr = get_unmapped_area(0,0, len, 0, flags);
+
+	flags = MAP_PRIVATE|MAP_ANONYMOUS;
+
+	if (addr & ~MAP_COW_ADDR_MASK)
+		return -1;
+
+	vm_flags = VM_COW | mm->def_flags | VM_MAYREAD | VM_MAYWRITE |
+			VM_MAYEXEC | VM_READ | VM_WRITE | VM_ACCOUNT | VM_LOCKED;
+
+	/* Check against address space limit. */
+	if (!may_expand_vm(mm, len >> PAGE_SHIFT)) {
+		return -ENOMEM;
+	}
+
+	if (find_vma_links(mm, addr, addr + len, &prev, &rb_link, &rb_parent)) {
+		return -ENOMEM;
+	}
+
+	/*
+	 * Private writable mapping: check memory availability
+	 */
+	if (accountable_mapping(0, vm_flags)) {
+		charged = len >> PAGE_SHIFT;
+		if (security_vm_enough_memory_mm(mm, charged))
+			return -ENOMEM;
+		vm_flags |= VM_ACCOUNT;
+	}
+
+
+	/*
+	 * Determine the object being mapped and call the appropriate
+	 * specific mapper. the address has already been validated, but
+	 * not unmapped, but the maps are removed from the list.
+	 */
+	vma = kmem_cache_zalloc(vm_area_cachep, GFP_KERNEL);
+	if (!vma) {
+		error = -ENOMEM;
+		goto unacct_error_cow;
+	}
+
+	cow_area[number].vma = vma;
+
+	vma->vm_mm = mm;
+	vma->vm_start = addr;
+	vma->vm_end = addr + len;
+	vma->vm_flags = vm_flags;
+	vma->vm_page_prot = vm_get_page_prot(vm_flags);
+	vma->vm_pgoff = 0;
+	vma->cow_number=number;
+
+	INIT_LIST_HEAD(&vma->anon_vma_chain);
+
+	if (mountnumber != -1)
+	{
+		if (anon_vma_fork(vma, cow_area[mountnumber].vma))
+		{
+			error = -ENOMEM;
+			goto free_vma_cow;
+		}
+	}
+
+	error = -EINVAL;
+
+	vma_link(mm, vma, prev, rb_link, rb_parent);
+
+	perf_event_mmap(vma);
+
+	vm_stat_account(mm, vm_flags, 0, len >> PAGE_SHIFT);
+
+	if (vm_flags & VM_LOCKED) {
+		if (!((vm_flags & VM_SPECIAL) || is_vm_hugetlb_page(vma) ||
+					vma == get_gate_vma(current->mm)))
+			mm->locked_vm += (len >> PAGE_SHIFT);
+		else
+			vma->vm_flags &= ~VM_LOCKED;
+	}
+
+	if (mountnumber != -1)
+	{
+		struct vm_area_struct * src_vma;
+
+		src_vma=cow_area[mountnumber].vma;
+		share_pagetable_cow(mm,src_vma->vm_mm,vma,src_vma,not_same_process);
+	}
+
+	return addr;
+
+free_vma_cow:
+	kmem_cache_free(vm_area_cachep, vma);
+unacct_error_cow:
+	if (charged)
+		vm_unacct_memory(charged);
+	return error;
+}
+
+
+SYSCALL_DEFINE1(createarea, unsigned long, len)
+{
+	long ret = -1;
+	int number = get_cow_area_struct();
+	if (number != -1)
+	{
+		struct mm_struct * mm = current->mm;
+		down_write(&cow_area[number].cow_sem);
+		down_write(&mm->mmap_sem);
+		ret = sys_createarea_common(number,len,-1,0);
+		up_write(&mm->mmap_sem);
+		up_write(&cow_area[number].cow_sem);
+	}
+	else
+		goto release_lock_in_create_area;
+
+	if (ret > 0)
+		return ret | number;
+
+release_lock_in_create_area:
+	release_cow_area_struct(number);
+	return -1;
+}
+
+SYSCALL_DEFINE1(mountarea, int, mountnumber)
+{
+	long ret = -1;
+	int number;
+	struct vm_area_struct *src_vma;
+	struct mm_struct *src_mm;
+	struct mm_struct *mm;
+	int not_same_process=0;
+
+	if (mountnumber<0)
+		return -1;
+	if (mountnumber>COW_AREA_COUNT)
+		return -1;
+
+	down_write(&mount_cow_sem);
+	down_read(&(cow_area[mountnumber].cow_sem));
+
+	if(cow_area[mountnumber].isinuse == 0 || cow_area[mountnumber].mountable == 0
+				|| cow_area[mountnumber].vma == NULL)
+	{
+		goto release_mount_cow_sem;
+	}
+
+	src_vma = cow_area[mountnumber].vma;
+	src_mm = src_vma->vm_mm;
+	mm = current->mm;
+
+	if(src_mm != mm)
+		not_same_process=1;
+
+	number = get_cow_area_struct();
+	if (number == -1)
+		goto release_get_cow_area_struct_in_mount_area;
+
+	down_write(&(cow_area[number].cow_sem));
+	down_write(&(mm->mmap_sem));
+	if(not_same_process)
+		down_read(&(src_mm->mmap_sem));
+
+	ret = sys_createarea_common(number,src_vma->vm_end - src_vma->vm_start, mountnumber,not_same_process);
+	if (ret < 0)
+		goto release_lock;
+
+	if(not_same_process)
+		up_read(&(src_mm->mmap_sem));
+	up_write(&(mm->mmap_sem));
+	up_write(&(cow_area[number].cow_sem));
+
+	up_read(&(cow_area[mountnumber].cow_sem));
+	up_write(&mount_cow_sem);
+	return ret | number;
+
+release_lock:
+
+	if(not_same_process)
+		up_read(&(src_mm->mmap_sem));
+	up_write(&(mm->mmap_sem));
+	up_write(&(cow_area[number].cow_sem));
+
+release_get_cow_area_struct_in_mount_area:
+	release_cow_area_struct(number);
+
+release_mount_cow_sem:
+	up_read(&(cow_area[mountnumber].cow_sem));
+	up_write(&mount_cow_sem);
+	return -1;
+}
+
+static inline long change_cow_mount(int number, int mountflag)
+{
+	if (number<0)
+		return -1;
+	if (number>COW_AREA_COUNT)
+		return -1;
+
+	down_write(&(cow_area[number].cow_sem));
+	if(cow_area[number].isinuse == 0)
+		goto release_cow_lock;
+	if(current->mm != (cow_area[number].vma->vm_mm))
+		goto release_cow_lock;
+	cow_area[number].mountable = mountflag;
+	up_write(&(cow_area[number].cow_sem));
+
+	return 0;
+release_cow_lock:
+	up_write(&(cow_area[number].cow_sem));
+	return -1;
+}
+SYSCALL_DEFINE2(sethookable, int, number, int,hookable)
+{
+	if((hookable!=0)&&(hookable!=1))
+		return -1;
+	return change_cow_mount(number, hookable);
+}
+
+SYSCALL_DEFINE1(releasearea, int, number)
+{
+	unsigned long addr;
+	unsigned long len;
+	if (number<0)
+		return -1;
+	if (number>COW_AREA_COUNT)
+		return -1;
+	down_write(&(cow_area[number].cow_sem));
+	if(cow_area[number].isinuse == 0)
+		goto release_cow_lock;
+	if(current->mm != (cow_area[number].vma->vm_mm))
+		goto release_cow_lock;
+	addr=cow_area[number].vma->vm_start;
+	len = cow_area[number].vma->vm_end - cow_area[number].vma->vm_start;
+	up_write(&(cow_area[number].cow_sem));
+	sys_munmap(addr, len);
+
+	return 0;
+release_cow_lock:
+	up_write(&(cow_area[number].cow_sem));
+	return -1;
+}

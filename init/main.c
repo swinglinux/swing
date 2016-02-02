@@ -468,11 +468,13 @@ static void __init mm_init(void)
 	pgtable_cache_init();
 	vmalloc_init();
 }
-
+extern void __init init_cow_area(void);
 asmlinkage void __init start_kernel(void)
 {
 	char * command_line;
 	extern const struct kernel_param __start___param[], __stop___param[];
+
+	init_cow_area();
 
 	/*
 	 * Need to run as early as possible, to initialize the

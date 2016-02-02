@@ -115,6 +115,30 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	struct vm_unmapped_area_info info;
 	unsigned long begin, end;
 
+	if(flags == -1)
+	{
+		int addr_block_last=mm->last_addr_block;
+		unsigned long addr_iter_block=addr_block_last;
+		find_start_end(flags, &begin, &end);
+		do
+		{
+			addr_iter_block++;
+			if(addr_iter_block==128)
+				addr_iter_block=1;
+
+			addr = addr_iter_block<<39;
+			vma = find_vma(mm, addr);
+			if (end - len >= addr && (!vma || addr + len <= vma->vm_start))
+			{
+				mm->last_addr_block=addr_iter_block;
+				return addr;
+			}
+
+		}while(addr_iter_block != addr_block_last);
+
+		return -ENOMEM;
+	}
+
 	if (flags & MAP_FIXED)
 		return addr;
 
@@ -130,6 +154,7 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 		    (!vma || addr + len <= vma->vm_start))
 			return addr;
 	}
+
 
 	info.flags = 0;
 	info.length = len;
@@ -153,6 +178,30 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 	/* requested length too big for entire address space */
 	if (len > TASK_SIZE)
 		return -ENOMEM;
+	if(flags == -1)
+	{
+		int addr_block_last=mm->last_addr_block;
+		unsigned long addr_iter_block=addr_block_last;
+		do
+		{
+			addr_iter_block++;
+			if(addr_iter_block==128)
+				addr_iter_block=1;
+
+			addr = addr_iter_block<<39;
+			vma = find_vma(mm, addr);
+			if (TASK_SIZE - len >= addr &&
+				(!vma || addr + len <= vma->vm_start))
+			{
+				mm->last_addr_block=addr_iter_block;
+				return addr;
+			}
+
+		}while(addr_iter_block != addr_block_last);
+
+		return -ENOMEM;
+	}
+
 
 	if (flags & MAP_FIXED)
 		return addr;
@@ -169,6 +218,7 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 				(!vma || addr + len <= vma->vm_start))
 			return addr;
 	}
+
 
 	info.flags = VM_UNMAPPED_AREA_TOPDOWN;
 	info.length = len;
