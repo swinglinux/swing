@@ -84,7 +84,7 @@ img.emoji {
 <p>A process uses this function to inform the operating system kernel that a COW memory area is ready to be mounted (by calling <em>hook()</em>). This system call is used to ensure data consistency. Before a process finishes modifying the data in its COW memory area, it may not wish other processes to hook the area and see a dirty version of the data. If a COW memory cannot be mounted, <em>hook()</em> returns -1. The function should return 0 if success.</p>
 <h4><strong>int disablehook</strong>(int <em>token</em>)</h4>
 <p>A process uses this function to inform the operating system kernel that a COW memory area cannot be hooked. It reverses the effect of <em>enablehook(</em>). When a COW memory area is just created, it is automatically disabled. The function should return 0 if success.</p>
-<h4><strong>int release</strong>(int <em>token</em>)</h4>
+<h4><strong>int releasearea</strong>(int <em>token</em>)</h4>
 <p>A process uses this system call to release a COW memory area created by <em>createarea()</em> or <em>hook()</em>. After the call, the input <em>token</em> is released and available to represent a new COW memory area. When a process terminates, its COW memory areas will be automatically released. The function should return 0 if success.</p>
 <h3>How to use it</h3>
 <p>As we implemented the function in the Linux kernel, you need to compile our kernel and install it. Because we have not tested it on other systems, we recommend that you use CentOS 7.</p>
