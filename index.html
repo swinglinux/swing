@@ -90,15 +90,15 @@ img.emoji {
 <p>As we implemented the function in the Linux kernel, you need to compile our kernel and install it. Because we have not tested it on other systems, we recommend that you use CentOS 7.</p>
 <h4>Step 1: get the code</h4>
 <p>You can get our kernel in the following three ways:</p>
-<p>1. Download from <a href="https://github.com/swinglinux/swing/tarball/swing">here</a> and extract it.</p>
+<p>1. Download from <a href="https://github.com/swinglinux/swing/tarball/swing" target="_blank">here</a> and extract it.</p>
 <p>2. Clone this repository and checkout the &#8216;swing&#8217; branch with commands:</p>
 <p style="padding-left: 30px;"><strong>git clone https://github.com/swinglinux/swing.git</strong></p>
 <p style="padding-left: 30px;"><strong>git checkout swing</strong></p>
-<p>3. If you have the <a href="https://git.kernel.org/cgit/linux/kernel/git/stable/linux-stable.git/">linux-stable git repo </a>in your computer. Just checkout v3.10.69, and then use <a href="https://gist.github.com/swinglinux/9115d2485841e2274efa">this patch</a> with the command:</p>
+<p>3. If you have the <a href="https://git.kernel.org/cgit/linux/kernel/git/stable/linux-stable.git/" target="_blank">linux-stable git repo </a>in your computer. Just checkout v3.10.69, and then use <a href="https://gist.github.com/swinglinux/9115d2485841e2274efa" target="_blank">this patch</a> with the command:</p>
 <p style="padding-left: 30px;"><strong>git apply swing_patch_to_linux-stable_v3.10.69.patch</strong></p>
 <h4>Step 2: compile it</h4>
 <p>You can compile and install it in the same way as compiling the original kernel.</p>
-<p>Put the <a href="https://gist.github.com/swinglinux/6cd5490b0b903fb7e973">.config </a>in the source code directory.</p>
+<p>Put the <a href="https://gist.github.com/swinglinux/6cd5490b0b903fb7e973" target="_blank">.config </a>in the source code directory.</p>
 <p style="padding-left: 30px;"><del>Optional: If you are familiar with the process, you can get this file from your system. If you are not, just ignore this line. </del></p>
 <p>Then you should configure the code with ( just execute this command and then exit ):</p>
 <p style="padding-left: 30px;"><strong>make menuconfig </strong></p>
