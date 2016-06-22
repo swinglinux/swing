@@ -95,7 +95,7 @@ void __init init_cow_area(void)
 		cow_area[i].isinuse=0;
 	}
 	init_rwsem(&mount_cow_sem);
-	printk("MENG:INFO Inited cow_area.\n");
+	printk(KERN_ALERT "MENG:INFO Inited cow_area.\n");
 }
 
 int get_cow_area_struct(void)
@@ -3360,10 +3360,16 @@ SYSCALL_DEFINE4(createarea_common, int, number, unsigned long, len, int, mountnu
 
 	len = PAGE_ALIGN(len);
 	if (!len)
+	{
+		printk(KERN_ALERT "!len");
 		return -ENOMEM;
+	}
 
 	if (mm->map_count > sysctl_max_map_count)
+	{
+		printk(KERN_ALERT "Too many vmas");
 		return -ENOMEM;
+	}
 
 	flags = -1;
 
@@ -3372,17 +3378,22 @@ SYSCALL_DEFINE4(createarea_common, int, number, unsigned long, len, int, mountnu
 	flags = MAP_PRIVATE|MAP_ANONYMOUS;
 
 	if (addr & ~MAP_COW_ADDR_MASK)
+	{
+		printk(KERN_ALERT "MAP_COW_ADDR_MASK");
 		return -1;
+	}
 
 	vm_flags = VM_COW | mm->def_flags | VM_MAYREAD | VM_MAYWRITE |
 			VM_MAYEXEC | VM_READ | VM_WRITE | VM_ACCOUNT | VM_LOCKED;
 
 	/* Check against address space limit. */
 	if (!may_expand_vm(mm, len >> PAGE_SHIFT)) {
+		printk(KERN_ALERT "Can not expand vm");
 		return -ENOMEM;
 	}
 
 	if (find_vma_links(mm, addr, addr + len, &prev, &rb_link, &rb_parent)) {
+		printk(KERN_ALERT "no vma links");
 		return -ENOMEM;
 	}
 
@@ -3391,8 +3402,6 @@ SYSCALL_DEFINE4(createarea_common, int, number, unsigned long, len, int, mountnu
 	 */
 	if (accountable_mapping(0, vm_flags)) {
 		charged = len >> PAGE_SHIFT;
-		if (security_vm_enough_memory_mm(mm, charged))
-			return -ENOMEM;
 		vm_flags |= VM_ACCOUNT;
 	}
 
@@ -3404,6 +3413,7 @@ SYSCALL_DEFINE4(createarea_common, int, number, unsigned long, len, int, mountnu
 	 */
 	vma = kmem_cache_zalloc(vm_area_cachep, GFP_KERNEL);
 	if (!vma) {
+		printk(KERN_ALERT "can not alloc vma structure");
 		error = -ENOMEM;
 		goto unacct_error_cow;
 	}
@@ -3478,7 +3488,10 @@ SYSCALL_DEFINE1(createarea, unsigned long, len)
 		up_write(&cow_area[number].cow_sem);
 	}
 	else
+	{
+		printk(KERN_ALERT "no cow area.");
 		goto release_lock_in_create_area;
+	}
 
 	if (ret > 0)
 		return ret | number;
@@ -3529,7 +3542,10 @@ SYSCALL_DEFINE1(mountarea, int, mountnumber)
 
 	ret = sys_createarea_common(number,src_vma->vm_end - src_vma->vm_start, mountnumber,not_same_process);
 	if (ret < 0)
+	{
+		printk(KERN_ALERT "realease lock. ret:%ld",ret);
 		goto release_lock;
+	}
 
 	if(not_same_process)
 		up_read(&(src_mm->mmap_sem));
