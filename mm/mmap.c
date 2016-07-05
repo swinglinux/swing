@@ -98,24 +98,33 @@ void __init init_cow_area(void)
 	printk(KERN_ALERT "MENG:INFO Inited cow_area.\n");
 }
 
-int get_cow_area_struct(void)
+int get_cow_area_struct( __user char* name)
 {
+	int re=-1;
 	int i;
+	int len;
 	for (i=0;i<COW_AREA_COUNT;i++)
 	{
-		if (cow_area[i].isinuse)
+		if (cow_area[i].isinuse == 1)
 			continue;
 		down_write(&(cow_area[i].cow_sem));
+
 		if (cow_area[i].isinuse == 0)
 		{
 			cow_area[i].isinuse = 1;
 			cow_area[i].mountable = 0;
 			cow_area[i].vma = NULL;
-			up_write(&(cow_area[i].cow_sem));
-			return i;
+			cow_area[i].addr=0;
+			len=strncpy_from_user(cow_area[i].name,name,sizeof(cow_area[i].name));
+			if(len>0)
+				cow_area[i].name[len]=0;
+			re=i;
 		}
-		else
-			up_write(&(cow_area[i].cow_sem));
+
+		up_write(&(cow_area[i].cow_sem));
+
+		if(re!=-1)
+			return re;
 	}
 	return -1;
 }
@@ -3474,10 +3483,11 @@ unacct_error_cow:
 }
 
 
-SYSCALL_DEFINE1(createarea, unsigned long, len)
+SYSCALL_DEFINE1(createarea, __user char*, name)
 {
 	long ret = -1;
-	int number = get_cow_area_struct();
+	long len=512*1024*1024*1024L;
+	int number = get_cow_area_struct(name);
 	if (number != -1)
 	{
 		struct mm_struct * mm = current->mm;
@@ -3501,14 +3511,75 @@ release_lock_in_create_area:
 	return -1;
 }
 
-SYSCALL_DEFINE1(mountarea, int, mountnumber)
+int get_cow_number(__user char*  oldnamep, __user char*  newnamep)
+{
+	char oldname[128];
+	char newname[128];
+	int len;
+	int i;
+	int re=-1;
+
+	/*
+	oldname=kmalloc(128,GFP_KERNE);
+	if(oldname==NULL)
+		return -1;
+
+	newname=kmalloc(128,GFP_KERNE);
+
+	if(newname==NULL)
+	{
+		kfree(oldname);
+		return -1;
+	}
+*/
+	printk("in get_cow_number1");
+	len=strncpy_from_user(oldname,oldnamep,128);
+	if(len>0)
+		oldname[len]=0;
+	printk("in get_cow_number2");
+
+	len=strncpy_from_user(newname,newnamep,128);
+	if(len>0)
+		newname[len]=0;
+
+	if(strcmp(newname,oldname)==0)
+		return -1;
+	printk("in get_cow_number3");
+
+	for (i=0;i<COW_AREA_COUNT;i++)
+	{
+		printk("in %d",i);
+		down_write(&(cow_area[i].cow_sem));
+
+		if (cow_area[i].isinuse == 1)
+		{
+			if(strcmp(cow_area[i].name,oldname)==0)
+				re=i;
+		}
+
+		up_write(&(cow_area[i].cow_sem));
+
+		if(re!=-1)
+			break;
+	}
+//	kfree(oldname);
+//	kfree(newname);
+
+	printk("got number %d",re);
+	return re;
+}
+
+SYSCALL_DEFINE2(mountarea, __user char*, oldnamep, __user char*, newnamep)
 {
 	long ret = -1;
 	int number;
+	int mountnumber;
 	struct vm_area_struct *src_vma;
 	struct mm_struct *src_mm;
 	struct mm_struct *mm;
 	int not_same_process=0;
+
+	mountnumber=get_cow_number(oldnamep,newnamep);
 
 	if (mountnumber<0)
 		return -1;
@@ -3531,7 +3602,7 @@ SYSCALL_DEFINE1(mountarea, int, mountnumber)
 	if(src_mm != mm)
 		not_same_process=1;
 
-	number = get_cow_area_struct();
+	number = get_cow_area_struct(newnamep);
 	if (number == -1)
 		goto release_get_cow_area_struct_in_mount_area;
 

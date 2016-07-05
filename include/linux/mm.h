@@ -30,6 +30,8 @@ struct cow_area_struct {
 	int isinuse;
 	int mountable;
     struct vm_area_struct *vma;
+    char name[128];
+    long addr;
 };
 #define COW_AREA_COUNT 100
 
